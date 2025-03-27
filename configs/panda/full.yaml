@@ -5,7 +5,7 @@ device_id : [0]
 
 # experiment name (also name of the saving directory)
 # model and log directory : {ROOT}/experiment/{exp_name}/
-exp_name : "panda_full2" 
+exp_name : "panda_full_w_vq_3d_synth_dr_w_transformed_zxy_uvloss"
 
 # Data
 urdf_robot_name : "panda"
@@ -19,6 +19,8 @@ rootnet_backbone_name : "hrnet32"
 rootnet_image_size : 256.0
 other_image_size : 256.0
 use_rpmg: False
+# multi_kp: True
+# kps_need_depth: [0, 1, 2, 3]
 
 # Optimizer
 lr : 1e-4
@@ -32,12 +34,51 @@ final_decay : 0.01
 exponent : 0.95
 
 # Training
-batch_size : 64
+batch_size : 48
 epoch_size : 104950
 n_epochs : 700
 n_dataloader_workers : 6
 save_epoch_interval : None
 clip_gradient : 5.0
+
+# For vq using
+vq_target: "3d_point"
+encoder_num_blocks: 3
+num_joints: 7
+encoder_num_blocks: 4
+encoder_token_inter_dim: 64
+encoder_hidden_dim: 128
+encoder_hidden_inter_dim: 32
+encoder_dropout: 0.1
+
+token_num: 128
+token_class_num: 1024
+token_dim: 128
+ema_decay: 0.99 
+decoder_num_blocks: 4
+decoder_hidden_dim: 128
+decoder_hidden_inter_dim: 32
+decoder_token_inter_dim: 64
+decoder_p_dropout: 0.1
+
+n_tokenizer_epochs: 250
+tokenizer_lr: 2e-4
+tokenizer_weight_decay: 0.01
+tokenizer_clip_gradient: 5.0
+latent_loss_weight: 0.75
+save_freq: 25
+
+tokenizer_pretrained: "./experiments/panda_full_w_vq_3d_synth_dr_w_transformed_zxy/tokenizer_pretrained/epoch_125_tokenizer.pk"
+
+# For class_head
+class_in_channels: 2048
+class_hidden_dim: 256
+class_num_blocks: 3
+class_hidden_inter_dim: 64
+class_token_inter_dim: 64
+class_conv_channels: 128
+class_p_dropout: 0.1
+
 
 # Method
 use_direct_reg_branch : True
@@ -47,6 +88,7 @@ rot_loss_func : "mse"
 trans_loss_func : "l2norm"
 depth_loss_func : "l1"
 uv_loss_func : "l2norm"
+uvs_loss_func : "mse"
 kp2d_loss_func : "l2norm"
 kp3d_loss_func : "l2norm"
 kp2d_int_loss_func : "l2norm"
@@ -57,6 +99,7 @@ rot_loss_weight : 1.0
 trans_loss_weight : 1.0
 depth_loss_weight : 10.0
 uv_loss_weight : 1.0
+uvs_loss_weight : 1.0
 kp2d_loss_weight : 10.0
 kp3d_loss_weight : 10.0
 kp2d_int_loss_weight : 10.0
@@ -69,7 +112,7 @@ bbox_3d_shape :
   - 1300
   - 1300
   - 1300
-reference_keypoint_id : 3   # 0:base 
+reference_keypoint_id : 0   # 0:base 
 fix_truncation : False
 
 use_pretrained_direct_reg_weights: False
@@ -95,4 +138,4 @@ use_rootnet_with_reg_with_int_separate_backbone : False
 
 # Resume
 resume_run : False
-resume_experiment_name : "resume_experiment_name"
+resume_experiment_name : "panda_full_w_vq_3d_synth_dr_moreepoch_with_mask"

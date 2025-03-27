@@ -32,7 +32,7 @@ final_decay : 0.01
 exponent : 0.78
 
 # Training
-batch_size : 32
+batch_size : 16
 epoch_size : 104950
 n_epochs : 700
 n_dataloader_workers : 6
@@ -103,7 +103,7 @@ use_rootnet_with_reg_int_shared_backbone : True
 use_rootnet_with_reg_with_int_separate_backbone : False
 
 use_sim2real : True
-use_view : False
+use_view : True
 pretrained_weight_on_synth : "panda_synth_pretrain/ckpt/curr_best_auc(add)_orb_model.pk"
 
 mask_loss_weight : 0.0

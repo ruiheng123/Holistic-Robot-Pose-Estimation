@@ -35,7 +35,7 @@ clip_gradient : 5.0
 
 
 # Training
-batch_size : 64
+batch_size : 40
 epoch_size : 104950
 n_epochs : 700
 n_dataloader_workers : 6
@@ -89,7 +89,7 @@ rootnet_depth_loss_weight : 1.0
 depth_loss_func : "l1"
 use_rootnet_xy_branch : False
 xy_loss_func : "mse"
-pretrained_rootnet: "experiments/baxter_rootnet_ref0_1028/ckpt/curr_best_root_depth_model.pk"
+pretrained_rootnet: "models/pretrained_depthnet/baxter_pretrained_depthnet.pk"
 use_origin_bbox : False
 use_extended_bbox : True
 

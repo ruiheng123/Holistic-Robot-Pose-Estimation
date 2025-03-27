@@ -3,6 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import torch
+from torch.utils.data import ConcatDataset, DataLoader
 from lib.core.function import farward_loss, validate
 from lib.dataset.const import INITIAL_JOINT_ANGLE
 from lib.models.full_net import get_rootNetwithRegInt_model
@@ -26,6 +27,13 @@ def train_full(args):
     device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
 
     ds_iter_train, test_loader_dict = get_dataloaders(args)
+#     all_loaders = [loader for key, loader in test_loader_dict.items() if (("dr" not in key) and ("photo" not in key))]
+
+# # 提取每个 DataLoader 的 dataset
+#     all_datasets = [dl.dataset for dl in all_loaders]
+#     combined_dataset = ConcatDataset(all_datasets)
+#     combined_loader = DataLoader(combined_dataset, batch_size=args.batch_size, num_workers=args.n_dataloader_workers)
+  
     
     init_param_dict = {
         "robot_type" : urdf_robot_name,
@@ -57,9 +65,17 @@ def train_full(args):
         losses = AverageValueMeter()
         losses_pose, losses_rot, losses_trans, losses_uv, losses_depth, losses_error2d, losses_error3d, losses_error2d_int, losses_error3d_int, losses_error3d_align = \
             AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter()
+        losses_token = AverageValueMeter()
+        losses_mtkp = AverageValueMeter()
+        losses_uvs = AverageValueMeter()
+        # auc_adds = {}
+        # for dsname, loader in test_loader_dict.items():
+        #     auc_add = validate(args=args, epoch=epoch, dsname=dsname, loader=loader, model=model, 
+        #                        robot=robot, writer=writer, device=device, device_id=device_id)
+            # auc_adds[dsname] = auc_add
         for batchid, sample in enumerate(iterator):
             optimizer.zero_grad()
-            loss, loss_dict = farward_loss(args=args, input_batch=sample, model=model, robot=robot, device=device, device_id=device_id, train=True)
+            loss, loss_dict = farward_loss(args=args, input_batch=sample, model=model, robot=robot, device=device, device_id=device_id, train=True, epoch=epoch)
             loss.backward()
             if args.clip_gradient is not None:
                 clipping_value = args.clip_gradient
@@ -70,36 +86,46 @@ def train_full(args):
             losses_rot.add(loss_dict["loss_rot"].detach().cpu().numpy())
             losses_trans.add(loss_dict["loss_trans"].detach().cpu().numpy())
             losses_uv.add(loss_dict["loss_uv"].detach().cpu().numpy())
+            losses_uvs.add(loss_dict["loss_uvs"].detach().cpu().numpy())
             losses_depth.add(loss_dict["loss_depth"].detach().cpu().numpy())
+            if args.multi_kp:
+                losses_mtkp.add(loss_dict["loss_depth_multi"].detach().cpu().numpy())
             losses_error2d.add(loss_dict["loss_error2d"].detach().cpu().numpy())
             losses_error3d.add(loss_dict["loss_error3d"].detach().cpu().numpy())
             losses_error2d_int.add(loss_dict["loss_error2d_int"].detach().cpu().numpy())
             losses_error3d_int.add(loss_dict["loss_error3d_int"].detach().cpu().numpy())
             losses_error3d_align.add(loss_dict["loss_error3d_align"].detach().cpu().numpy())
 
+            losses_token.add(loss_dict["loss_token"].detach().cpu().numpy())
             if (batchid+1) % 100 == 0:    # Every 100 mini-batches/iterations
                 writer.add_scalar('Train/loss', losses.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/pose_loss', losses_pose.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/rot_loss', losses_rot.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/trans_loss', losses_trans.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/uv_loss', losses_uv.mean , epoch * len(ds_iter_train) + batchid + 1)
+                writer.add_scalar('Train/uvs_loss', losses_uvs.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/depth_loss', losses_depth.mean , epoch * len(ds_iter_train) + batchid + 1)
+                if args.multi_kp:
+                    writer.add_scalar('Train/loss_depth_multi', losses_mtkp.mean , epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/error2d_loss', losses_error2d.mean, epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/error3d_loss', losses_error3d.mean, epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/error2d_int_loss', losses_error2d_int.mean, epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/error3d_int_loss', losses_error3d_int.mean, epoch * len(ds_iter_train) + batchid + 1)
                 writer.add_scalar('Train/error3d_align_loss', losses_error3d_align.mean, epoch * len(ds_iter_train) + batchid + 1)
+                writer.add_scalar('Train/token_loss', losses_token.mean, epoch * len(ds_iter_train) + batchid + 1)
                 losses.reset()
                 losses_pose.reset()
                 losses_rot.reset()
                 losses_trans.reset()
                 losses_uv.reset()
+                losses_uvs.reset()
                 losses_depth.reset()
                 losses_error2d.reset()
                 losses_error3d.reset()
                 losses_error2d_int.reset()
                 losses_error3d_int.reset()
                 losses_error3d_align.reset()
+                losses_token.reset()
             writer.add_scalar('LR/learning_rate_opti', optimizer.param_groups[0]['lr'], epoch * len(ds_iter_train) + batchid + 1)
             if len(optimizer.param_groups) > 1:
                 for pgid in range(1,len(optimizer.param_groups)):
@@ -112,6 +138,7 @@ def train_full(args):
             auc_add = validate(args=args, epoch=epoch, dsname=dsname, loader=loader, model=model, 
                                robot=robot, writer=writer, device=device, device_id=device_id)
             auc_adds[dsname] = auc_add
+        print(auc_adds)
 
         save_checkpoint(args=args, auc_adds=auc_adds, 
                         model=model, optimizer=optimizer, 
@@ -119,6 +146,8 @@ def train_full(args):
                         epoch=epoch, lr_scheduler=lr_scheduler, 
                         curr_max_auc=curr_max_auc, 
                         curr_max_auc_4real=curr_max_auc_4real)
+        
+        torch.cuda.empty_cache()
                   
     print("Training Finished !")
     writer.flush()

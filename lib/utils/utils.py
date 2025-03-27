@@ -64,15 +64,37 @@ def get_dataloaders(args):
     
     urdf_robot_name = args.urdf_robot_name
     train_ds_names = args.train_ds_names
-    test_ds_name_dr = train_ds_names.replace("train_dr","test_dr")
-    if urdf_robot_name != "baxter":
-        test_ds_name_photo = train_ds_names.replace("train_dr","test_photo")
-    if urdf_robot_name == "panda":
+    if "synth" in train_ds_names:
+        test_ds_name_dr = train_ds_names.replace("train_dr","test_dr")
+        if urdf_robot_name != "baxter":
+            test_ds_name_photo = train_ds_names.replace("train_dr","test_photo")
+        if urdf_robot_name == "panda":
+            
+            test_ds_name_real = [train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_azure"),
+                                train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_kinect360"),
+                                train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_realsense"),
+                                train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-orb")]
+    elif "real" in train_ds_names:
+        if urdf_robot_name == "panda":
+            test_ds_name_dr = "data/dream/synthetic/panda_synth_test_dr"
+        elif urdf_robot_name == "kuka":
+            test_ds_name_dr = "data/dream/synthetic/kuka_synth_test_dr"
+        else:
+            test_ds_name_dr = "data/dream/synthetic/baxter_synth_test_dr"
+     
         
-        test_ds_name_real = [train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_azure"),
-                            train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_kinect360"),
-                            train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-3cam_realsense"),
-                            train_ds_names.replace("synthetic/panda_synth_train_dr","real/panda-orb")]
+        # test_ds_name_dr = "dream/synthetic/panda_synth_test_dr" if "panda" in args.urdf_robot_name else "dream/synthetic/kuka_synth_test_dr"
+        if urdf_robot_name != "baxter":
+            test_ds_name_photo = "data/dream/synthetic/kuka_synth_test_photo"
+        if urdf_robot_name == "panda":
+            
+            test_ds_name_real = [
+                "data/dream/real/panda-3cam_azure",
+                "data/dream/real/panda-3cam_kinect360",
+                "data/dream/real/panda-3cam_realsense",
+                "data/dream/real/panda-orb"
+            ]
+        
         
     rootnet_hw = (int(args.rootnet_image_size),int(args.rootnet_image_size))
     other_hw = (int(args.other_image_size),int(args.other_image_size))

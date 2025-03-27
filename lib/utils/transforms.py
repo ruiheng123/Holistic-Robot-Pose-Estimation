@@ -159,4 +159,4 @@ def get_intrinsic_matrix_batch(f, c, bsz, inv=False):
             intrinsic_matrix[:, 1, 2] = c[1]
             intrinsic_matrix[:, 2, 2] = 1
 
-        return intrinsic_matrix.cuda(device=0)
+        return intrinsic_matrix.cuda()

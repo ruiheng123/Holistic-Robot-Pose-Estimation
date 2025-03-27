@@ -8,6 +8,7 @@ from lib.core.config import make_cfg
 from scripts.train_depthnet import train_depthnet
 from scripts.train_sim2real import train_sim2real
 from scripts.train_full import train_full
+from scripts.train_tokenizer import train_vq_tokenizer
     
 
 if __name__ == '__main__':
@@ -19,11 +20,12 @@ if __name__ == '__main__':
     print("-------------------   config for this experiment   -------------------")
     print(cfg)
     print("----------------------------------------------------------------------")
-    
+    # train_vq_tokenizer(cfg)
     if cfg.use_rootnet_with_reg_int_shared_backbone:
         print(f"\n pipeline: full network training (JointNet/RotationNet/KeypoinNet/DepthNet) \n")
+        # train_vq_tokenizer(cfg)
         train_full(cfg)
-    
+    # 
     elif cfg.use_rootnet:
         print("\n pipeline: training DepthNet only \n")
         train_depthnet(cfg)
@@ -35,6 +37,7 @@ if __name__ == '__main__':
     elif cfg.use_sim2real_real:
         print("\n pipeline: self-supervised training on my real datasets \n")
         # train_sim2real_real(cfg)
+        
         
         
     

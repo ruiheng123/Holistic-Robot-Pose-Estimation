@@ -89,7 +89,45 @@ def make_default_cfg():
     cfg.use_rootnet_xy_branch = False
     cfg.add_fc = False
     cfg.multi_kp = False
-    cfg.kps_need_depth =  None
+    cfg.kps_need_depth = None
+
+
+    # vq
+    cfg.input_dim = 3
+    cfg.output_dim = 3
+    cfg.encoder_num_blocks = 3
+    cfg.num_joints = 7
+    cfg.encoder_num_blocks = 4
+    cfg.encoder_token_inter_dim = 64
+    cfg.encoder_hidden_dim = 128
+    cfg.encoder_hidden_inter_dim = 32
+    cfg.encoder_dropout = 0.1
+    cfg.token_num = 512
+    cfg.token_class_num = 256
+    cfg.token_dim = 64
+    cfg.ema_decay = 0.99 
+    cfg.decoder_num_blocks = 4
+    cfg.decoder_hidden_dim = 128
+    cfg.decoder_hidden_inter_dim = 32
+    cfg.decoder_token_inter_dim = 64
+    cfg.decoder_p_dropout = 0.1
+    cfg.tokenizer_lr = 1e-4
+    cfg.tokenizer_weight_decay = 0.
+    cfg.n_tokenizer_epochs = 50
+    cfg.tokenizer_clip_gradient = 4.0
+    cfg.latent_loss_weight = 0.2
+    cfg.save_freq = 10
+    cfg.tokenizer_pretrained = ""
+
+    # class head
+    cfg.class_in_channels = 256
+    cfg.class_conv_channels = 256
+    cfg.class_hidden_dim = 128
+    cfg.class_num_blocks = 3
+    cfg.class_hidden_inter_dim = 64
+    cfg.class_token_inter_dim = 64
+    cfg.class_conv_channels = 256
+    cfg.class_p_dropout = 0.1
     
     # loss
     ## for full network training
@@ -97,6 +135,7 @@ def make_default_cfg():
     cfg.rot_loss_func = "mse"
     cfg.trans_loss_func = "l2norm"
     cfg.uv_loss_func = "l2norm"
+    cfg.uvs_loss_func = "mse"
     cfg.depth_loss_func = "l1"
     cfg.kp3d_loss_func = "l2norm"
     cfg.kp2d_loss_func = "l2norm"
@@ -107,6 +146,7 @@ def make_default_cfg():
     cfg.rot_loss_weight = 0.0
     cfg.trans_loss_weight = 0.0
     cfg.uv_loss_weight = 0.0
+    cfg.uvs_loss_weight = 0.0
     cfg.depth_loss_weight = 0.0
     cfg.kp2d_loss_weight = 0.0
     cfg.kp3d_loss_weight = 0.0

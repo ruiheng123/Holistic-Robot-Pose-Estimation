@@ -135,12 +135,12 @@ threadpoolctl==3.1.0
 tinycss2==1.2.1
 tomli==2.0.1
 toolz==0.12.0
-torch==1.13.1+cu117
+# torch==1.13.1+cu117
 torch-summary==1.4.5
 torch-utils==0.1.2
 torchgeometry==0.1.2
 torchnet==0.0.4
-torchvision==0.14.1+cu117
+# torchvision==0.14.1+cu117
 tornado==6.3.1
 tqdm==4.41.1
 traitlets==5.9.0

@@ -5,7 +5,7 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import torch
-from config import LOCAL_DATA_DIR
+from lib.config import LOCAL_DATA_DIR
 from lib.dataset.const import (INITIAL_JOINT_ANGLE, INTRINSICS_DICT,
                                     JOINT_NAMES, JOINT_TO_KP)
 from lib.dataset.dream import DreamDataset
@@ -238,7 +238,7 @@ def train_sim2real(args):
            
             if args.use_rootnet_with_reg_int_shared_backbone or args.use_rootnet_with_reg_with_int_separate_backbone:
                 pred_pose, pred_rot, pred_trans, pred_root_uv, pred_root_depth, \
-                    pred_uvd, pred_keypoints3d_int, pred_keypoints3d = model(reg_images, root_images, k_values, K=other_K)
+                    pred_uvd, pred_keypoints3d_int, pred_keypoints3d, pred_logit, pred_recounstruct, gt_indicies = model(reg_images, root_images, k_values, K=other_K)
                 pred_keypoints2d_reproj_int = point_projection_from_3d_tensor(other_K, pred_keypoints3d_int)
                 pred_keypoints2d_reproj = point_projection_from_3d_tensor(other_K, pred_keypoints3d)
             else:
@@ -278,7 +278,7 @@ def train_sim2real(args):
                                                                                 pred_xyz_integral=None,
                                                                                 reference_keypoint_id=args.reference_keypoint_id
                                                                                 )
-                image_dis3d_avg_int, image_dis2d_avg_int = np.array([0],dtype=np.float), np.array([0],dtype=np.float)
+                image_dis3d_avg_int, image_dis2d_avg_int = np.array([0],dtype=np.float32), np.array([0],dtype=np.float32)
                 if pred_keypoints3d_int is not None:
                     image_dis3d_avg_int, image_dis2d_avg_int, batch_dis3d_avg_int, batch_dis2d_avg_int, \
                     batch_l1jointerror_avg_int, image_l1jointerror_avg_int, root_depth_error_int, batch_error_relative_int, _ = compute_metrics_batch(
@@ -469,31 +469,34 @@ def train_sim2real(args):
                 # print(loss, loss_mask, loss_iou, loss_scale, loss_error3d_align)
             
             if args.use_view and save:
-                # if batchid is not None and batchid % vis_step == 0:
-                #     img_errors = torch.mean(error3d, dim=1)
-                #     assert len(img_errors.shape) == 1 and img_errors.shape[0] == batch_size
-                #     max_index = torch.argmax(img_errors)
-                #     vispath = os.path.join(vis_folder, f"{int(batchid//40)}")
-                #     os.makedirs(vispath, exist_ok=True)
-                #     cpu_renderer = robot.set_robot_renderer(K_original[0], device="cpu")
-                #     gpu_renderer = robot.set_robot_renderer(K_original[0], device="cuda")
-                #     robot_mesh_batch = robot.get_robot_mesh_list(joint_angles=pred_pose, renderer=cpu_renderer)
-                #     seg_masks = seg_net(images_original_255).detach()
-                #     rendered_mask = robot.get_rendered_mask_single_image_at_specific_root(pred_pose[max_index], pred_rot[max_index], pred_trans[max_index], robot_mesh_batch[max_index], gpu_renderer, root=args.reference_keypoint_id)
-                #     if epoch_log == 0:
-                #         image_o = np.transpose(images_original_255[max_index].detach().cpu().numpy().copy(), (1,2,0))
-                #         image_o = cv2.cvtColor(image_o, cv2.COLOR_RGB2BGR)
-                #         image_o = cv2.resize(image_o, (320, 240))
-                #         cv2.imwrite(vispath + f'/origin.jpg',image_o)
-                #         si = seg_masks[max_index].reshape(240,320).detach().cpu().numpy() * 255
-                #         cv2.imwrite(vispath + f'/segmentation.jpg', np.uint8(si))
-                #     ri = rendered_mask.reshape(240,320).detach().cpu().numpy() * 255
-                #     si = seg_masks[max_index].reshape(240,320).detach().cpu().numpy() * 255
-                #     cv2.imwrite(vispath + f'/render{epoch_log}.jpg', np.uint8(ri))
-                #     stacks = np.zeros((240,320,3),dtype=np.uint8)
-                #     stacks[:,:,0] = ri
-                #     stacks[:,:,2] = si
-                #     cv2.imwrite(vispath + f'/stack{epoch_log}.jpg', stacks)
+                if batchid is not None and batchid % vis_step == 0:
+                    vis_folder = os.path.join(save_folder,  'vis')
+                    train_vispath = os.path.join(vis_folder, f"train")
+                    os.makedirs(train_vispath, exist_ok=True)
+                    img_errors = torch.mean(error3d, dim=1)
+                    assert len(img_errors.shape) == 1 and img_errors.shape[0] == batch_size
+                    max_index = torch.argmax(img_errors)
+                    vispath = os.path.join(vis_folder, f"{int(batchid//40)}")
+                    os.makedirs(vispath, exist_ok=True)
+                    cpu_renderer = robot.set_robot_renderer(K_original[0], device="cpu")
+                    gpu_renderer = robot.set_robot_renderer(K_original[0], device="cuda")
+                    robot_mesh_batch = robot.get_robot_mesh_list(joint_angles=pred_pose, renderer=cpu_renderer)
+                    seg_masks = seg_net(images_original_255).detach()
+                    rendered_mask = robot.get_rendered_mask_single_image_at_specific_root(pred_pose[max_index], pred_rot[max_index], pred_trans[max_index], robot_mesh_batch[max_index], gpu_renderer, root=args.reference_keypoint_id)
+                    if epoch_log == 0:
+                        image_o = np.transpose(images_original_255[max_index].detach().cpu().numpy().copy(), (1,2,0))
+                        image_o = cv2.cvtColor(image_o, cv2.COLOR_RGB2BGR)
+                        image_o = cv2.resize(image_o, (320, 240))
+                        cv2.imwrite(vispath + f'/origin.jpg',image_o)
+                        si = seg_masks[max_index].reshape(240,320).detach().cpu().numpy() * 255
+                        cv2.imwrite(vispath + f'/segmentation.jpg', np.uint8(si))
+                    ri = rendered_mask.reshape(240,320).detach().cpu().numpy() * 255
+                    si = seg_masks[max_index].reshape(240,320).detach().cpu().numpy() * 255
+                    cv2.imwrite(vispath + f'/render{epoch_log}.jpg', np.uint8(ri))
+                    stacks = np.zeros((240,320,3),dtype=np.uint8)
+                    stacks[:,:,0] = ri
+                    stacks[:,:,2] = si
+                    cv2.imwrite(vispath + f'/stack{epoch_log}.jpg', stacks)
                     
                 if view_ids is not None:
                     view_batch_ids = list(np.array(view_ids, dtype=int)//args.batch_size)
@@ -502,6 +505,7 @@ def train_sim2real(args):
                             pid = images_id[pt].item()
                             if pid in view_ids:
                                 index = view_ids.index(pid)
+                                vis_folder = os.path.join(save_folder,  'vis')
                                 vispath = os.path.join(vis_folder, f"{int(index+1)}")
                                 os.makedirs(vispath, exist_ok=True)
                                 cpu_renderer = robot.set_robot_renderer(K_original[0], device="cpu")
@@ -629,6 +633,7 @@ def train_sim2real(args):
                 if ds_short in train_ds_names:
                     print(f"Getting the worst cases of the pretrained model on {ds_short} dataset")
                     view_ids, errors = validate(ds_short, 0, get_lowest=True)
+                    print(f"view_ids is {view_ids}")
             for ds_short in ds_shorts:
                 if ds_short == code_name:
                     auc_add_real, loss_val_real = validate(ds_short, 0, view_ids=view_ids, errors=errors)
@@ -640,7 +645,7 @@ def train_sim2real(args):
             AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter(),AverageValueMeter()
         for batchid, sample in enumerate(iterator):
             optimizer.zero_grad()
-            loss, loss_dict = farward_loss(args=args,input_batch=sample, device=device, model=model, train=True, batchid=batchid, epoch_log=epoch)
+            loss, loss_dict = farward_loss(args=args,input_batch=sample, device=device, model=model, train=True, save=True, batchid=batchid, epoch_log=epoch, vis_step=10, view_ids=view_ids)
             loss.backward()
             if args.clip_gradient is not None:
                 clipping_value = args.clip_gradient

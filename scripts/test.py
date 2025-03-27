@@ -149,7 +149,7 @@ def test_network(args):
         model = torch.nn.DataParallel(model, device_ids=device_id, output_device=device_id[0])
         
         pred_pose, pred_rot, pred_trans, pred_root_uv, pred_root_depth, \
-            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk, times = model(reg_images, root_images, k_values, K=other_K, test_fps=True)
+            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk, times, pred_logit, pred_recounstruct, gt_indicies = model(reg_images, root_images, k_values, K=other_K, test_fps=True, train=train)
 
         if cfg.known_joint:
             pred_pose = gt_pose.clone()
@@ -393,6 +393,36 @@ def make_cfg(args):
     cfg.multi_kp = config["multi_kp"] if "multi_kp" in config else False
     cfg.kps_need_depth = config["kps_need_depth"] if "kps_need_depth" in config else None
 
+    cfg.vq_target = config["vq_target"]
+    cfg.encoder_num_blocks = config["encoder_num_blocks"]
+    cfg.num_joints = config["num_joints"]
+    cfg.encoder_token_inter_dim = config["encoder_token_inter_dim"]
+    cfg.encoder_hidden_dim = config["encoder_hidden_dim"]
+    cfg.encoder_hidden_inter_dim = config["encoder_hidden_inter_dim"]
+    cfg.encoder_dropout = config["encoder_dropout"]
+    cfg.token_num = config["token_num"]
+    cfg.token_class_num = config["token_class_num"]
+    cfg.token_dim = config["token_dim"]
+    cfg.ema_decay = config["ema_decay"]
+    cfg.decoder_num_blocks = config["decoder_num_blocks"]
+    cfg.decoder_hidden_dim = config["decoder_hidden_dim"]
+    cfg.decoder_hidden_inter_dim = config["decoder_hidden_inter_dim"]
+    cfg.decoder_token_inter_dim = config["decoder_token_inter_dim"]
+    cfg.decoder_p_dropout = config["decoder_p_dropout"]
+    cfg.n_tokenizer_epochs = config["n_tokenizer_epochs"]
+    cfg.tokenizer_lr = config["tokenizer_lr"]
+    cfg.tokenizer_weight_decay = config["tokenizer_weight_decay"]
+    cfg.tokenizer_clip_gradient = config["tokenizer_clip_gradient"]
+    cfg.latent_loss_weight = config["latent_loss_weight"]
+    cfg.save_freq = config["save_freq"]
+    cfg.tokenizer_pretrained = config["tokenizer_pretrained"]
+    cfg.class_in_channels = config["class_in_channels"]
+    cfg.class_hidden_dim = config["class_hidden_dim"]
+    cfg.class_num_blocks = config["class_num_blocks"]
+    cfg.class_hidden_inter_dim = config["class_hidden_inter_dim"]
+    cfg.class_token_inter_dim = config["class_token_inter_dim"]
+    cfg.class_conv_channels = config["class_conv_channels"]
+    cfg.class_p_dropout = config["class_p_dropout"]
     return cfg
 
     

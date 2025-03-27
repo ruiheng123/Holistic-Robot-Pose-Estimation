@@ -5,7 +5,7 @@ device_id : [0]
 
 # experiment name (also name of the saving directory)
 # model and log directory : {ROOT}/experiment/{exp_name}/
-exp_name : "panda_depthnet" 
+exp_name : "panda_depthnet_allmkp" 
 
 # Data
 urdf_robot_name : "panda"
@@ -18,6 +18,8 @@ backbone_name : "hrnet32"
 split_reg_head : False
 split_type : "2-first"
 use_rpmg: False
+multi_kp: True
+kps_need_depth: [0, 1, 2, 3, 4, 5, 6]
 
 # Optimizer
 lr : 1e-4
@@ -68,7 +70,7 @@ bbox_3d_shape :
   - 1300
   - 1300
   - 1300
-reference_keypoint_id : 3   # 0:base 
+reference_keypoint_id : 0   # 0:base 
 
 use_pretrained_direct_reg_weights: False
 pretrained_direct_reg_weights_path: None

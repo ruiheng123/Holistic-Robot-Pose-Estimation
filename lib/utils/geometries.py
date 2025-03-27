@@ -48,6 +48,7 @@ def quat_to_rotmat_np(quat):
     Returns:
         Rotation matrix corresponding to the quaternion -- size = [3, 3]
     """ 
+    #! 传入 [0., 0., 0., 1] 时为 Identity！
     norm_quat = quat
     norm_quat = norm_quat / np.linalg.norm(norm_quat, ord=2, axis=0, keepdims=True)
     w, x, y, z = norm_quat[0], norm_quat[1], norm_quat[2], norm_quat[3]
@@ -59,6 +60,11 @@ def quat_to_rotmat_np(quat):
                     [2*wx + 2*yz, -(w2 - x2 + y2 - z2), 2*xy - 2*wz],
                     [-2*xz + 2*wy, 2*wz + 2*xy, -(w2 + x2 - y2 - z2)]])
     return rotMat
+
+    #* 两个 quat 2 rot 不是一个！！！ 第一个为 (w, x, y, z)，第二个为 (x, y, z, w)
+    #* 经验证：[0, 0, 1],                              [0, 0, 1],
+    #*        [0, -1, 0],  @  q2r_np.transpose()  @   [0, 1, 0],
+    #*        [1, 0, 0],                               [-1, 0, 0]
 
 def rotmat_to_quat(matrices):
     batch = matrices.shape[0]

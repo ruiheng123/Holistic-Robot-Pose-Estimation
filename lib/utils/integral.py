@@ -70,8 +70,71 @@ def get_intrinsic_matrix_batch(f, c, bsz, inv=False):
             intrinsic_matrix[:, 1, 2] = c[1]
             intrinsic_matrix[:, 2, 2] = 1
 
-        return intrinsic_matrix.cuda(device=0)
+        return intrinsic_matrix.cuda()
     
+class HeatmapIntegralPoseOnlyuvd(nn.Module):
+    """
+    This module takes in heatmap output and performs soft-argmax(integral operation).
+    """
+    def __init__(self, backbone, **kwargs):
+        super(HeatmapIntegralPose, self).__init__()
+        self.backbone_name = backbone
+        self.norm_type = kwargs["norm_type"]
+        self.num_joints = kwargs["num_joints"]
+        self.depth_dim = kwargs["depth_dim"]
+        self.height_dim = kwargs["height_dim"]
+        self.width_dim = kwargs["width_dim"]
+        self.rootid = kwargs["rootid"] if "rootid" in kwargs else 0
+        self.fixroot = kwargs["fixroot"] if "fixroot" in kwargs else False
+        
+        # self.focal_length = kwargs['FOCAL_LENGTH'] if 'FOCAL_LENGTH' in kwargs else 320
+        bbox_3d_shape = kwargs['bbox_3d_shape'] if 'bbox_3d_shape' in kwargs else (2300, 2300, 2300)
+        self.bbox_3d_shape = torch.tensor(bbox_3d_shape).float()
+        self.depth_factor = self.bbox_3d_shape[2] * 1e-3
+        self.image_size = kwargs["image_size"]
+    
+    
+    def forward(self, out, flip_test=False, **kwargs):
+        """
+        Adapted from https://github.com/Jeff-sjtu/HybrIK/tree/main/hybrik/models
+        """
+        
+        # K = kwargs["K"]
+        batch_size = out.shape[0]
+        
+        
+        if self.backbone_name in ["resnet", "resnet34", "resnet50"]:
+            # out = out.reshape(batch_size, self.num_joints, self.depth_dim, self.height_dim, self.width_dim)
+            out = out.reshape((out.shape[0], self.num_joints, -1)) #! torch.Size([48, 448, 64, 64])
+            out = norm_heatmap_resnet(self.norm_type, out)         #! torch.Size([48, 7, 262144])
+            assert out.dim() == 3, out.shape
+            heatmaps = out / out.sum(dim=2, keepdim=True)
+            heatmaps = heatmaps.reshape((heatmaps.shape[0], self.num_joints, self.depth_dim, self.height_dim, self.width_dim)) #! [48, 7, 64, 64, 64]
+            hm_x0 = heatmaps.sum((2, 3)) # (B, K, W)
+            hm_y0 = heatmaps.sum((2, 4)) # (B, K, H)
+            hm_z0 = heatmaps.sum((3, 4)) # (B, K, D)
+
+            range_tensor = torch.arange(hm_x0.shape[-1], dtype=torch.float32, device=hm_x0.device)
+            
+            hm_x = hm_x0 * range_tensor
+            hm_y = hm_y0 * range_tensor
+            hm_z = hm_z0 * range_tensor
+
+            coord_x = hm_x.sum(dim=2, keepdim=True)
+            coord_y = hm_y.sum(dim=2, keepdim=True)
+            coord_z = hm_z.sum(dim=2, keepdim=True)
+            
+            coord_x = coord_x / float(self.width_dim) - 0.5
+            coord_y = coord_y / float(self.height_dim) - 0.5
+            coord_z = coord_z / float(self.depth_dim) - 0.5
+
+            #  -0.5 ~ 0.5
+            pred_uvd_jts = torch.cat((coord_x, coord_y, coord_z), dim=2)  
+            if self.fixroot: 
+                pred_uvd_jts[:,self.rootid,2] = 0.0
+            pred_uvd_jts_flat = pred_uvd_jts.reshape(batch_size, -1)
+
+
 class HeatmapIntegralPose(nn.Module):
     """
     This module takes in heatmap output and performs soft-argmax(integral operation).
@@ -106,11 +169,11 @@ class HeatmapIntegralPose(nn.Module):
         
         if self.backbone_name in ["resnet", "resnet34", "resnet50"]:
             # out = out.reshape(batch_size, self.num_joints, self.depth_dim, self.height_dim, self.width_dim)
-            out = out.reshape((out.shape[0], self.num_joints, -1))
-            out = norm_heatmap_resnet(self.norm_type, out)
+            out = out.reshape((out.shape[0], self.num_joints, -1)) #! torch.Size([48, 448, 64, 64])
+            out = norm_heatmap_resnet(self.norm_type, out)         #! torch.Size([48, 7, 262144])
             assert out.dim() == 3, out.shape
             heatmaps = out / out.sum(dim=2, keepdim=True)
-            heatmaps = heatmaps.reshape((heatmaps.shape[0], self.num_joints, self.depth_dim, self.height_dim, self.width_dim))
+            heatmaps = heatmaps.reshape((heatmaps.shape[0], self.num_joints, self.depth_dim, self.height_dim, self.width_dim)) #! [48, 7, 64, 64, 64]
             hm_x0 = heatmaps.sum((2, 3)) # (B, K, W)
             hm_y0 = heatmaps.sum((2, 4)) # (B, K, H)
             hm_z0 = heatmaps.sum((3, 4)) # (B, K, D)

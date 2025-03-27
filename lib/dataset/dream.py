@@ -145,7 +145,7 @@ class DreamDataset(torch.utils.data.Dataset):
         # Joints
         obj_data = annotations['objects'][0]
         if 'quaternion_xyzw' in obj_data:
-            rotMat = quat_to_rotmat_np(np.array(obj_data['quaternion_xyzw']))
+            rotMat = quat_to_rotmat_np(np.array(obj_data['quaternion_xyzw'])) #![x, y, z, w]  [0, 0, 0, 1 是 identity!]
             translation = np.array(obj_data['location']) * self.scale
             TWO = np.zeros((4,4), dtype=float)
             TWO[:3, :3] = rotMat
@@ -159,7 +159,12 @@ class DreamDataset(torch.utils.data.Dataset):
             TWO[:3, :3] = TWO[:3, :3] @ R_NORMAL_UE  
             
         else:
-            rotMat = quat_to_rotmat_np(np.array([1.0,0.0,0.0,0.0]))
+            rotMat = quat_to_rotmat_np(np.array([1.0, 0.0, 0.0, 0.0]))    #! 这个算出来是 diag{1, -1, -1}!!!
+            #* 两个 quat 2 rot 不是一个！！！ 第一个为 (w, x, y, z)，第二个为 (x, y, z, w)
+            #* 经验证：[0, 0, 1],                   [0, 0, 1],
+            #*        [0, -1, 0],  @   rotMat  @   [0, 1, 0],    = Identity!
+            #*        [1, 0, 0],                   [-1, 0, 0]
+            #& 这个在原来的 quat_to_rotmap 里面 [1, 0, 0, 0] 是 Identity!
             translation = np.array(obj_data['location']) * self.scale
             TWO = np.zeros((4,4), dtype=float)
             TWO[:3, :3] = rotMat

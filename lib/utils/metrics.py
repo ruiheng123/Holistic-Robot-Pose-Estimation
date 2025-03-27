@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-def compute_metrics_batch(robot,gt_keypoints3d,gt_keypoints2d,K_original,gt_joint,**pred_kwargs):
+def compute_metrics_batch(robot, gt_keypoints3d, gt_keypoints2d, K_original, gt_joint, **pred_kwargs):
     
     # compute 3d keypoints locations 
     # output shape: (batch_size, keypoints_num, 3)
@@ -18,7 +18,7 @@ def compute_metrics_batch(robot,gt_keypoints3d,gt_keypoints2d,K_original,gt_join
         pred_trans = torch.cat((pred_xy,pred_depth),dim=-1)
     pred_xyz_integral = pred_kwargs["pred_xyz_integral"]
     reference_keypoint_id = pred_kwargs["reference_keypoint_id"]
-    
+    #! 或者给出 pred_xyz_integral，或者给出 joint/rot/trans 三者用FK 得到 xyz
     if pred_joint is None or pred_rot is None or pred_trans is None:
         assert pred_xyz_integral is not None
         pred_keypoints3d = pred_xyz_integral
@@ -56,6 +56,7 @@ def compute_metrics_batch(robot,gt_keypoints3d,gt_keypoints2d,K_original,gt_join
     assert(error3d_batch.shape == (batch_size,keypoints_num))
     error3d = np.mean(error3d_batch, axis = 1)
     # pcts3d = [len(np.where(error3d < th_mm/1000.0)[0])/float(error3d.shape[0]*error3d.shape[1]) for th_mm in add_thresholds]
+    #^ error3d: array([0.05412867, 0.06333173, 0.08052641, 0.14829826, 0.12026437....)
     
     # PCK percentage of correct keypoints (only keypoints within the camera frame)
     error2d_batch = np.linalg.norm(pred_keypoints2d - gt_keypoints2d, ord = 2, axis = 2)
@@ -66,14 +67,15 @@ def compute_metrics_batch(robot,gt_keypoints3d,gt_keypoints2d,K_original,gt_join
     valid_sum = np.sum(valid, axis = 1)
     error2d = error2d_sum / valid_sum
     # pcts2d = [len(np.where(error2d < th_p)[0])/float(error2d.shape[0]*error2d.shape[1]) for th_p in pck_thresholds]
-    
+    #^ error2d: array([13.4609811, 19.5503, 36.0500, 32.3348, ....
     # 3D/2D mean distance with gt of each keypoints
     dis3d = list(np.mean(error3d_batch, axis = 0))
     error2d_sum_batch = np.sum(error2d_all, axis = 0)
     valid_sum_batch = np.sum(valid, axis = 0)
     dis2d = error2d_sum_batch / valid_sum_batch
     # dis2d = list(np.mean(error2d_batch, axis = 0))
-    
+    #^ dis3d: [0.13912702, 0.08105879, 0.056221474, 0.052228685, 0.10474814, 0.09184078, 0.11965951]
+    #^ dis2d: [30.24951172, 22.88535309, 22.5537618 , 21.93204244, 36.38793945, 28.46219449, 44.06784728]
     # mean joint angle L1 error (per joint)
     # mean joint angle L1 error (per image)
     if pred_joint is not None:
@@ -95,6 +97,8 @@ def compute_metrics_batch(robot,gt_keypoints3d,gt_keypoints2d,K_original,gt_join
     error_depth = np.abs(pred_keypoints3d[:,reference_keypoint_id,2] - gt_keypoints3d[:,reference_keypoint_id,2])
 
     # root relative error
+    #! 注意这里 root_relative predict出来的 (x, y, z) --> (x, y, z-refer_z)
+    #! root relative 仅修正 z-axis！x, y 都不修正！
     pred_relatives = pred_keypoints3d[:,:,2] - pred_keypoints3d[:,reference_keypoint_id:reference_keypoint_id+1,2]
     gt_relatives = gt_keypoints3d[:,:,2] - gt_keypoints3d[:,reference_keypoint_id:reference_keypoint_id+1,2]
     error_relative = np.abs(pred_relatives - gt_relatives)
@@ -129,9 +133,7 @@ def summary_add_pck(alldis):
     add_threshold_values = np.arange(0.0, auc_threshold, delta_threshold)
     counts_3d = []
     for value in add_threshold_values:
-        under_threshold = (
-            np.mean(dis3d <= value)
-        )
+        under_threshold = (np.mean(dis3d <= value))
         counts_3d.append(under_threshold)
     auc_add = np.trapz(counts_3d, dx=delta_threshold) / auc_threshold
     
@@ -141,9 +143,7 @@ def summary_add_pck(alldis):
     pck_threshold_values = np.arange(0, auc_pixel_threshold, delta_pixel)
     counts_2d = []
     for value in pck_threshold_values:
-        under_threshold = (
-            np.mean(dis2d <= value)
-        )
+        under_threshold = (np.mean(dis2d <= value))
         counts_2d.append(under_threshold)
     auc_pck = np.trapz(counts_2d, dx=delta_pixel) / auc_pixel_threshold
 
@@ -228,7 +228,7 @@ def draw_depth_figure(alldis, savename, testdsname):
     plt.xlim(0, 2.0)
     plt.ylim(0, 0.2)
     plt.title("root depth error -- gt root depth scatterplot")
-    plt.savefig("unit_test/depth_curve/"+savename+"_"+ds+".jpg")
+    plt.savefig(os.path.join(savename, f"depth_curve_{ds}.jpg"))
     plt.close()
 
     plt.close()

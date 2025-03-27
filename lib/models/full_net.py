@@ -7,11 +7,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dataset.const import JOINT_BOUNDS, JOINT_NAMES
+from lib.models.tokenizer import VectorQuantizeTokenizer
+from lib.models.class_head import ClassificationHead
 from .backbones.HRnet import get_hrnet
 from .backbones.Resnet import get_resnet
 from utils.geometries import rot6d_to_rotmat, rotmat_to_quat, rotmat_to_rot6d
 from utils.integral import HeatmapIntegralJoint, HeatmapIntegralPose
-from utils.transforms import uvz2xyz_singlepoint
+from utils.transforms import uvz2xyz_singlepoint, uvd_to_xyz, xyz_to_uvd
+from utils.integral import get_intrinsic_matrix_batch
 from utils.urdf_robot import URDFRobot
 
 
@@ -71,18 +74,63 @@ class RootNetwithRegInt(nn.Module):
                                                   image_size=self.image_size, bbox_3d_shape=self.bbox_3d_shape, rootid=self.reference_keypoint_id,
                                                   fixroot=args.fix_root)
         self.rotation_dim = args.rotation_dim
+        # vq_target = args.vq_target
+
+        # if vq_target == "3d_point":
+        #     data_dim = 3
+        # elif vq_target == "2d_point":
+        #     data_dim = 2
+        self.tokenizer = VectorQuantizeTokenizer(
+            input_dim=args.input_dim,
+            output_dim=args.output_dim,
+            encoder_num_blocks=args.encoder_num_blocks,
+            num_joints=args.num_joints,
+            encoder_token_inter_dim=args.encoder_token_inter_dim,
+            encoder_hidden_dim=args.encoder_hidden_dim,
+            encoder_hidden_inter_dim=args.encoder_hidden_inter_dim,
+            encoder_dropout=args.encoder_dropout,
+            token_num=args.token_num,
+            token_class_num=args.token_class_num,
+            token_dim=args.token_dim,
+            ema_decay=args.ema_decay,
+            decoder_num_blocks=args.decoder_num_blocks,
+            decoder_hidden_dim=args.decoder_hidden_dim,
+            decoder_hidden_inter_dim=args.decoder_hidden_inter_dim,
+            decoder_token_inter_dim=args.decoder_token_inter_dim,
+            decoder_p_dropout=args.decoder_p_dropout,
+            stage= "classifier"
+        )
+        if args.tokenizer_pretrained is not None:
+            self.tokenizer.init_weights(pretrained=args.tokenizer_pretrained)
+        
+
+        
         if self.backbone_name in ["resnet", "resnet34", "resnet50", "resnet101"]:
             self.reg_backbone = get_resnet(self.backbone_name)
             self.feature_channel = self.reg_backbone.block.expansion * 512
             self.deconv_layers = self._make_deconv_layer()
             self.final_layer = nn.Conv2d(self.deconv_dim[2], self.num_joints * self.depth_dim, kernel_size=1, stride=1, padding=0)
-            self.avgpool = nn.AvgPool2d(int(self.image_size/32), stride=1)
+            self.avgpool = nn.AvgPool2d(int(self.image_size / 32), stride=1)
         elif self.backbone_name in ["hrnet", "hrnet32"]:
             self.reg_backbone = get_hrnet(type_name=32, num_joints=self.num_joints, depth_dim=self.depth_dim,
                                       pretrain=True, generate_feat=True, generate_hm=True)
             self.feature_channel = 2048
         else:
             raise(NotImplementedError)
+        self.class_head = ClassificationHead(
+            in_channels=args.class_in_channels, 
+            image_size=(self.image_size, self.image_size),
+            num_joints=self.num_joints,
+            conv_channels=args.class_conv_channels,
+            hidden_dim=args.class_hidden_dim,
+            num_blocks=args.class_num_blocks,
+            hidden_inter_dim=args.class_hidden_inter_dim,
+            token_inter_dim=args.class_token_inter_dim,
+            dropout=args.p_dropout,
+            token_num=args.token_num,
+            token_class_num=args.token_class_num,
+            tokenizer = self.tokenizer
+        )
         
         self.reg_joint_map = args.reg_joint_map
         if self.reg_joint_map:
@@ -145,6 +193,7 @@ class RootNetwithRegInt(nn.Module):
         
         self.multi_kp = args.multi_kp
         self.kps_need_depth = args.kps_need_depth if self.multi_kp else [args.reference_keypoint_id]
+        print(f"你本次是否开启multi_kp: {self.multi_kp}, 预测了{self.kps_need_depth if self.kps_need_depth else None}这些点的深度")
         self.depth_num = len(self.kps_need_depth)
         self.add_fc = args.add_fc
         if self.add_fc:
@@ -163,7 +212,7 @@ class RootNetwithRegInt(nn.Module):
             stride=1,
             padding=0
         )  
-
+        
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -236,8 +285,8 @@ class RootNetwithRegInt(nn.Module):
         
         return nn.Sequential(*joint_conv_layers)
 
-    def forward(self, x_reg_input, x_root_input, k_value, K, init_pose=None, init_rot=None, test_fps=False):
-
+    def forward(self, x_reg_input, x_root_input, k_value, K, init_pose=None, init_rot=None, test_fps=False, **kwargs):
+        curr_epoch=kwargs.get("epoch", None)
         batch_size = x_reg_input.shape[0]
         x_reg_input = x_reg_input.to(torch.float)
         x_root_input = x_root_input.to(torch.float)
@@ -294,7 +343,53 @@ class RootNetwithRegInt(nn.Module):
             xf = self.avgpool(x_out)
             out = self.deconv_layers(x_out)
             out = self.final_layer(out)
-            pred_uvd, pred_xyz_int = self.integral_layer(out, root_trans=root_trans_from_rootnet, K=K)
+            #! Here 3dkp passes vq part
+            #! Img --(backbone)--> img_feat1 ---(head)-->
+            gt_keypoints3d = kwargs.get("gt_keypoints3d", None)
+
+            #! Transform from camera coordinate back to object coordinate.
+            TCO_matrix = kwargs.get("TCO_matirx", None)
+            TCO_inv_matrix = torch.linalg.inv(TCO_matrix)
+            gt_keypoints3d_homo = torch.cat([gt_keypoints3d, torch.ones_like(gt_keypoints3d[..., :1])], dim=-1)
+            gt_transf_keypoints3d = (TCO_inv_matrix.unsqueeze(1) @ gt_keypoints3d_homo.unsqueeze(-1))[..., :3, 0]
+            is_training = kwargs.get("train", True)
+
+
+            if is_training:
+            # pred_logit, pred_uv, gt_indicies = self.class_head(x_out, joints=gt_2d_with_mask, train=True)
+                pred_logit, pred_xyz_obj, gt_indicies = self.class_head(x_out, joints=gt_transf_keypoints3d, train=is_training)
+
+            else:
+                val_dsname = kwargs.get("val_dsname", None)
+                if val_dsname in ["azure", "kinect", "realsense", "orb"]:
+                    gt_transf_keypoints3d[..., [0, 1, 2]] = gt_transf_keypoints3d[..., [2, 0, 1]]
+                pred_xyz_obj, _ = self.class_head(x_out, joints=gt_transf_keypoints3d, train=is_training)
+                pred_logit, gt_indicies = None, None
+                if val_dsname in ["azure", "kinect", "realsense", "orb"]:
+                    pred_xyz_obj[..., [0, 1, 2]] = pred_xyz_obj[..., [1, 2, 0]]
+            pred_xyz_obj_homo = torch.cat([pred_xyz_obj, torch.ones_like(gt_keypoints3d[..., :1])], dim=-1)
+            pred_xyz_int = (TCO_matrix.unsqueeze(1) @ pred_xyz_obj_homo.unsqueeze(-1))[..., :3, 0]
+            if not is_training:
+                if val_dsname in ["azure", "kinect", "realsense", "orb"]:
+                    import torch.nn.functional as F
+                    print(F.mse_loss(pred_xyz_int, gt_keypoints3d).item())
+
+            
+            # pred_int_uvd, _ = self.integral_layer(out, root_trans=root_trans_from_rootnet, K=K)
+            # pred_uvd = torch.cat([pred_uv, pred_int_uvd[:, :, -1].unsqueeze(2)], dim=2)
+            # else: 
+                # pred_xyz_int, _ = self.class_head(x_out, joints=gt_keypoints3d, train=is_training)
+                
+            
+            intrinsic_k = get_intrinsic_matrix_batch((K[:,0,0],K[:,1,1]), (K[:,0,2],K[:,1,2]), bsz=batch_size, inv=False)
+            # inv_intrinsic_k = get_intrinsic_matrix_batch((K[:,0,0],K[:,1,1]), (K[:,0,2],K[:,1,2]), bsz=batch_size, inv=True)
+            depth_factor = torch.tensor(self.bbox_3d_shape, dtype=torch.float32)[2] * 1e-3
+            pred_uvd = xyz_to_uvd(xyz_jts=pred_xyz_int, image_size=self.image_size, intrinsic_matrix=intrinsic_k, 
+                                           root_trans=root_trans_from_rootnet, depth_factor=depth_factor, return_relative=False)
+            # pred_xyz_int = uvd_to_xyz(uvd_jts=pred_uvd, image_size=self.image_size, intrinsic_matrix_inverse=inv_intrinsic_k,
+                                    #   root_trans=root_trans_from_rootnet, depth_factor=depth_factor, return_relative=False)
+            # TODO: here is the 3d keypoint
+            
             pred_root_uv = (pred_uvd[:,self.reference_keypoint_id,:2]+ 0.5) * self.image_size
         elif self.backbone_name in ["hrnet", "hrnet32"]:
             out, xf = self.reg_backbone(x_reg_input)
@@ -308,7 +403,12 @@ class RootNetwithRegInt(nn.Module):
         pred_pose = init_pose
         pred_rot = init_rot
         xf = xf.view(xf.size(0), -1)
-        
+        '''
+        #! x_out -> jointnet -> pred_pose   or  [xf, pred_pose] -> jointnet -> pred_pose
+        #! xf -> rotationnet -> pred_rot    or  [xf, pred_rot] -> rotationnet -> pred_rot
+        #! [out, root_trans_from_rootnet, K] -> pred_uvd, pred_xyz_integral, pred_root_uv
+        #^ x_root_input  -- hrnet bb -- depthnet --  pred_depth -- root_trans_from_rootnet ([0, 0, pred_depth])
+        '''
         # skiplist, skiplist2 = {}, {}
         if self.reg_joint_map:
             joint_out = self.joint_conv_layers(x_out)
@@ -389,12 +489,12 @@ class RootNetwithRegInt(nn.Module):
             time_whole = t_end_other - t_start_root
         
         if test_fps:
-            return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_uvd, pred_xyz_int, pred_xyz_fk, (time_root,time_other,time_whole)
+            return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_uvd, pred_xyz_int, pred_xyz_fk, (time_root,time_other,time_whole), pred_logit, gt_indicies
         else:
             if self.multi_kp:
-                return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_depths, pred_uvd, pred_xyz_int, pred_xyz_fk
+                return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_depths, pred_uvd, pred_xyz_int, pred_xyz_fk, pred_logit, gt_indicies
             else:
-                return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_uvd, pred_xyz_int, pred_xyz_fk
+                return pred_pose, pred_rot, pred_trans, pred_root_uv, pred_depth, pred_uvd, pred_xyz_int, pred_xyz_fk, pred_logit, gt_indicies
 
 
     
