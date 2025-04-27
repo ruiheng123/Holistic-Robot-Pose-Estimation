@@ -114,10 +114,10 @@ def farward_loss(args, input_batch, model, robot, device, device_id, train=True)
         gt_pose = gt_pose + mean_joints
     if args.multi_kp:
         pred_pose, pred_rot, pred_trans, pred_root_uv, pred_root_depth, pred_depths, \
-            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk = model(reg_images, root_images, k_values, K=other_K)
+            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk = model(reg_images, root_images, k_values, K=other_K, gt_3dkp=gt_keypoints3d, gt_rot=gt_rot)
     else:
         pred_pose, pred_rot, pred_trans, pred_root_uv, pred_root_depth, \
-            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk = model(reg_images, root_images, k_values, K=other_K)
+            pred_uvd, pred_keypoints3d_int, pred_keypoints3d_fk = model(reg_images, root_images, k_values, K=other_K, gt_3dkp=gt_keypoints3d, gt_rot=gt_rot)
     pred_keypoints2d_reproj_int = point_projection_from_3d_tensor(other_K, pred_keypoints3d_int)
     pred_keypoints2d_reproj_fk = point_projection_from_3d_tensor(other_K, pred_keypoints3d_fk)
 
@@ -346,9 +346,11 @@ def validate(args, epoch, dsname, loader, model, robot, writer, device, device_i
     metric_dis3d_int = [AverageValueMeter() for i in range(len(robot.link_names))]
     metric_dis2d_int = [AverageValueMeter() for i in range(len(robot.link_names))]
     metric_l1joint = [AverageValueMeter() for i in range(robot.dof)]
+    iterator = tqdm(loader, dynamic_ncols=True, desc=f"Validating {dsname}: {epoch}")
     with torch.no_grad():
-        for idx, sample in enumerate(tqdm(loader, dynamic_ncols=True)):
+        for idx, sample in enumerate(iterator):
             vloss, loss_dict, metric_dict = farward_loss(args=args, input_batch=sample, model=model, robot=robot, device=device, device_id=device_id, train=False)
+            iterator.set_postfix(error3d_int=f"{loss_dict['loss_error3d_int'].item():.4f}")
             loss_val.add(vloss.detach().cpu().numpy())
             losses_pose.add(loss_dict["loss_joint"].detach().cpu().numpy())
             losses_rot.add(loss_dict["loss_rot"].detach().cpu().numpy())

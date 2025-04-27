@@ -5,7 +5,7 @@ device_id : [0]
 
 # experiment name (also name of the saving directory)
 # model and log directory : {ROOT}/experiment/{exp_name}/
-exp_name : "panda_full2" 
+exp_name : "panda_full_1try" 
 
 # Data
 urdf_robot_name : "panda"
@@ -14,11 +14,23 @@ val_ds_names : None
 image_size : 256.0
 
 # Model
-backbone_name : "resnet50"
-rootnet_backbone_name : "hrnet32"
-rootnet_image_size : 256.0
-other_image_size : 256.0
+# backbone_name : "resnet50"
+# rootnet_backbone_name : "hrnet32"
+vision_encoder_name : 'vits'
+depth_dim : 72
+backbone_name : "vits"
+rootnet_backbone_name : "vits"
+rootnet_image_size : 252.0
+other_image_size : 252.0
 use_rpmg: False
+
+hidden_dim : 128      #& For embed dim
+num_in_blocks : 3
+num_out_blocks : 2
+
+latent_dim : 512   #& For big transformer
+num_heads : 16
+transformer_blocks : 6
 
 # Optimizer
 lr : 1e-4
@@ -32,7 +44,7 @@ final_decay : 0.01
 exponent : 0.95
 
 # Training
-batch_size : 64
+batch_size : 48
 epoch_size : 104950
 n_epochs : 700
 n_dataloader_workers : 6
@@ -69,7 +81,7 @@ bbox_3d_shape :
   - 1300
   - 1300
   - 1300
-reference_keypoint_id : 3   # 0:base 
+reference_keypoint_id : 0   # 0:base 
 fix_truncation : False
 
 use_pretrained_direct_reg_weights: False

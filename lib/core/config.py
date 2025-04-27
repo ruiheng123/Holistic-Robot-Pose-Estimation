@@ -61,10 +61,20 @@ def make_default_cfg():
     
     # model
     ## basic setting
+    cfg.vision_encoder_name = "vits"
+    cfg.depth_dim = 63
     cfg.backbone_name = "resnet50"
     cfg.rootnet_backbone_name = "hrnet32"
     cfg.rootnet_image_size = (cfg.image_size, cfg.image_size)
     cfg.other_image_size = (cfg.image_size, cfg.image_size)
+    
+    cfg.hidden_dim = 128
+    cfg.num_in_blocks = 3
+    cfg.num_out_blocks = 2
+    
+    cfg.latent_dim = 512
+    cfg.num_heads = 8
+    cfg.transformer_blocks = 6
     ## Jointnet/RotationNet
     cfg.n_iter = 4
     cfg.p_dropout = 0.5

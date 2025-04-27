@@ -236,7 +236,7 @@ class RootNetwithRegInt(nn.Module):
         
         return nn.Sequential(*joint_conv_layers)
 
-    def forward(self, x_reg_input, x_root_input, k_value, K, init_pose=None, init_rot=None, test_fps=False):
+    def forward(self, x_reg_input, x_root_input, k_value, K, init_pose=None, init_rot=None, test_fps=False, **kwargs):
 
         batch_size = x_reg_input.shape[0]
         x_reg_input = x_reg_input.to(torch.float)
@@ -258,7 +258,8 @@ class RootNetwithRegInt(nn.Module):
             if test_fps:
                 t_start_root = time.time()
             img_feat = self.rootnet_backbone(x_root_input)
-        if self.add_fc:
+            #& [B, 3, 256, 256] -> img_feat.shape: [B, 2048]
+        if self.add_fc: #& self.add_fc default: False
             img_feat1 = self.depth_fc_d1(img_feat)
             img_feat2 = self.depth_fc_d2(img_feat1)
             img_feat_mid = self.depth_bn(img_feat2)
@@ -270,7 +271,8 @@ class RootNetwithRegInt(nn.Module):
             img_feat = img_feat4 
         img_feat = torch.unsqueeze(img_feat,2)
         img_feat = torch.unsqueeze(img_feat,3)
-        gamma = self.depth_layer(img_feat)
+        #& img_feat.shape: [B, 2048, 1, 1]
+        gamma = self.depth_layer(img_feat) #& depth_layer: Conv2d(in=2048, out=1, ksp=1,1,0)
         gamma = gamma.view(-1,1)
         if self.multi_kp:
             pred_depths = gamma.view(-1,self.depth_num) * k_value.view(-1,1).expand(-1, self.depth_num)
@@ -284,14 +286,14 @@ class RootNetwithRegInt(nn.Module):
             torch.cuda.current_stream().synchronize()
             t_end_root = time.time()
             time_root = t_end_root - t_start_root 
-        root_trans_from_rootnet[:,2:3] = pred_depth
+        root_trans_from_rootnet[:,2:3] = pred_depth #& pred_depth.shape: [64, 1]
         
         if test_fps:
             t_start_other = time.time() 
         # integral uvd xyz
         if self.backbone_name in ["resnet", "resnet50", "resnet34"]:
-            x_out = self.reg_backbone(x_reg_input)
-            xf = self.avgpool(x_out)
+            x_out = self.reg_backbone(x_reg_input) #& x_out.shape: [B, 2048, 8, 8]
+            xf = self.avgpool(x_out)               #& xf.shape: [B, 2048, 1, 1]
             out = self.deconv_layers(x_out)
             out = self.final_layer(out)
             pred_uvd, pred_xyz_int = self.integral_layer(out, root_trans=root_trans_from_rootnet, K=K)
@@ -307,7 +309,7 @@ class RootNetwithRegInt(nn.Module):
         # joint angle/pose, rotation (iterative)
         pred_pose = init_pose
         pred_rot = init_rot
-        xf = xf.view(xf.size(0), -1)
+        xf = xf.view(xf.size(0), -1) #& [B, 2048, 1, 1] -> [B, 2048]
         
         # skiplist, skiplist2 = {}, {}
         if self.reg_joint_map:

@@ -104,7 +104,7 @@ class HeatmapIntegralPose(nn.Module):
         batch_size = out.shape[0]
         inv_k = get_intrinsic_matrix_batch((K[:,0,0],K[:,1,1]), (K[:,0,2],K[:,1,2]), bsz=batch_size, inv=True)
         
-        if self.backbone_name in ["resnet", "resnet34", "resnet50"]:
+        if self.backbone_name in ["resnet", "resnet34", "resnet50"] or ("vit" in self.backbone_name):
             # out = out.reshape(batch_size, self.num_joints, self.depth_dim, self.height_dim, self.width_dim)
             out = out.reshape((out.shape[0], self.num_joints, -1))
             out = norm_heatmap_resnet(self.norm_type, out)

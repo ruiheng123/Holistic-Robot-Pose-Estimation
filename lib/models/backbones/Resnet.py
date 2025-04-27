@@ -54,15 +54,15 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv1(x) #& resnet50 Conv2d(in=3, out=64, ksp=7,2,3)  [B, 3, 256, 256] -> [48, 64, 128, 128]
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.maxpool(x)
+        x = self.maxpool(x) #& Maxpool2d(ksp=3,2,1)  [B, 64, 128, 128] -> [B, 64, 64, 64]
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer1(x) #& [B, 256, 64, 64]
+        x = self.layer2(x) #& [B, 512, 32, 32]
+        x = self.layer3(x) #& [B, 1024, 16, 16]
+        x = self.layer4(x) #& [B, 2048, 8, 8]
 
         return x
 

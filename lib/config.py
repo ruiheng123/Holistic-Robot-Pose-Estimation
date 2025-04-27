@@ -17,12 +17,12 @@ EXP_DIR = LOCAL_DATA_DIR / 'models'
 RESULTS_DIR = LOCAL_DATA_DIR / 'results'
 DEBUG_DATA_DIR = LOCAL_DATA_DIR / 'debug_data'
 DEPS_DIR = LOCAL_DATA_DIR / 'deps'
-CACHE_DIR = LOCAL_DATA_DIR / 'joblib_cache'
+CACHE_DIR = LOCAL_DATA_DIR / 'joblib_cache' 
 assert LOCAL_DATA_DIR.exists()
-CACHE_DIR.mkdir(exist_ok=True)
+# CACHE_DIR.mkdir(exist_ok=True)
 TEST_DATA_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
-DEBUG_DATA_DIR.mkdir(exist_ok=True)
+# DEBUG_DATA_DIR.mkdir(exist_ok=True)
 
 ASSET_DIR = DATA_DIR / 'assets'
 MEMORY = Memory(CACHE_DIR, verbose=2)

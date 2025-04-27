@@ -6,6 +6,7 @@ import torch
 from lib.core.function import farward_loss, validate
 from lib.dataset.const import INITIAL_JOINT_ANGLE
 from lib.models.full_net import get_rootNetwithRegInt_model
+from lib.models.full_transformer import get_transformerModel
 from lib.utils.urdf_robot import URDFRobot
 from lib.utils.utils import set_random_seed, create_logger, get_dataloaders, get_scheduler, resume_run, save_checkpoint
 from torchnet.meter import AverageValueMeter
@@ -35,7 +36,8 @@ def train_full(args):
     }
     if args.use_rootnet_with_reg_int_shared_backbone:
         print("regression and integral shared backbone, with rootnet 2 backbones in total")
-        model = get_rootNetwithRegInt_model(init_param_dict, args)
+        # model = get_rootNetwithRegInt_model(init_param_dict, args)
+        model = get_transformerModel(init_param_dict, args)
     else:
         assert 0
     
@@ -65,6 +67,9 @@ def train_full(args):
                 clipping_value = args.clip_gradient
                 torch.nn.utils.clip_grad_norm_(model.parameters(), clipping_value)
             optimizer.step()
+            iterator.set_postfix(e3d=f"{loss_dict['loss_error3d'].item():.4f}", e3dint=f"{loss_dict['loss_error3d_int'].item():.4f}", \
+                                 jo=f"{loss_dict['loss_joint'].item():.4f}", rot=f"{loss_dict['loss_rot'].item():.4f}", \
+                                 dep=f"{loss_dict['loss_depth'].item():.4f}")
             losses.add(loss.detach().cpu().numpy())
             losses_pose.add(loss_dict["loss_joint"].detach().cpu().numpy())
             losses_rot.add(loss_dict["loss_rot"].detach().cpu().numpy())
