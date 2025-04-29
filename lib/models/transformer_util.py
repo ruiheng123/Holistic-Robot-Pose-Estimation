@@ -113,7 +113,34 @@ def get_multimodal_cond_pos_embed(embed_dim, mm_cond_lens: OrderedDict,
     
     return c_pos_emb
 
+class DepthHead(nn.Module):
+    def __init__(self):
+        super(DepthHead, self).__init__()
+        self.conv_1 = self._make_conv_block(1, 64, 4, 2, 3)
+        self.conv_2 = self._make_conv_block(64, 128, 4, 2, 1)
+        self.conv_3 = self._make_conv_block(128, 256, 4, 2, 1)
+        self.conv_4 = self._make_conv_block(256, 512, 4, 2, 1)
+        self.conv_5 = self._make_conv_block(512, 1024, 4, 2, 1)
+        self.max_pooling = nn.MaxPool2d(kernel_size=8, stride=8, padding=0)
 
+    def _make_conv_block(self, in_channels, out_channels, kernel, stride, padding):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=kernel, stride=stride, padding=padding),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(out_channels),  
+            nn.LeakyReLU() 
+        )
+    def forward(self, x):
+        x = self.conv_1(x)
+        x = self.conv_2(x)
+        x = self.conv_3(x)
+        x = self.conv_4(x)
+        x = self.conv_5(x)
+        x = self.max_pooling(x)
+        return x
+    
 class EmbedMLP(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, num_blocks=3, dropout=0.1):
         super().__init__()

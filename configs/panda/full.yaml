@@ -17,6 +17,8 @@ image_size : 256.0
 # backbone_name : "resnet50"
 # rootnet_backbone_name : "hrnet32"
 vision_encoder_name : 'vits'
+depth_encoder_name : 'vits'
+depth_encoder_path : models/depth_anything_v2_vits.pth
 depth_dim : 72
 backbone_name : "vits"
 rootnet_backbone_name : "vits"

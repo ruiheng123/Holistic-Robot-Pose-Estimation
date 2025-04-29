@@ -13,10 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-from .transformer_util import EmbedMLP, TransformerBlock, get_1d_sincos_pos_embed_from_grid, \
-                                get_multimodal_cond_pos_embed
+from .transformer_util import EmbedMLP, TransformerBlock, DepthHead, \
+                            get_1d_sincos_pos_embed_from_grid, get_multimodal_cond_pos_embed
 from dataset.const import JOINT_BOUNDS, JOINT_NAMES
-from .dino_vit import load_dino_model
+from .dino_vit import load_dino_model, load_dam_model
 from utils.geometries import rot6d_to_rotmat, rotmat_to_quat, rotmat_to_rot6d
 from utils.integral import HeatmapIntegralJoint, HeatmapIntegralPose
 from utils.transforms import uvz2xyz_singlepoint
@@ -55,7 +55,7 @@ class FullTransformerNetwork(nn.Module):
         DoF, nkpt = ROBOT_DOF_DICT[init_param_dict["robot_type"]]
         self.num_keypoints = nkpt    #& 7 in panda
         self.num_joints = DoF        #& 8 in panda 
-        self.vision_encoder_name = args.vision_encoder_name
+        
         
         #* Size of input data
         self.image_size = args.image_size
@@ -68,23 +68,33 @@ class FullTransformerNetwork(nn.Module):
         #* Size of latent in Transformer
         self.latent_dim = args.latent_dim 
         
-
-        
         #* Layer configs
         #? 1. Vision part for image processing
         self.norm_type = "softmax"
-        self.vision_backbone = load_dino_model(self.vision_encoder_name)
+        self.vision_encoder_name = args.vision_encoder_name
+        self.depth_encoder_name = args.depth_encoder_name
+        self.depth_encoder_path = args.depth_encoder_path
         print(f"Loading Dino Vision Encoder... as {self.vision_encoder_name}")
+        print(f"Loading DAM Depth Encoder... as {self.depth_encoder_name}")
+        self.vision_backbone = load_dino_model(self.vision_encoder_name)
+        self.depth_backbone = load_dam_model(self.depth_encoder_name, self.depth_encoder_path)
+        for param in self.vision_backbone.parameters():
+            param.requires_grad = False
+        for param in self.depth_backbone.parameters():
+            param.requires_grad = False
+        self.multi_kp = args.multi_kp
+        self.depth_head = DepthHead()
+        self.depth_linear = nn.Linear(1024, self.num_keypoints if self.multi_kp else 1)
         self.vision_patch_size = self.vision_backbone.patch_size #! 14 in dino
         self.patch_num = (int(self.image_size) // self.vision_patch_size) ** 2
         #& need image_size to be divisible by vision_patch_size!
         self.vision_channel = nn.Linear(self.vision_backbone.embed_dim, self.latent_dim)
         
         #& process after transformer network
-        self.vision_out_1 = nn.Linear(self.latent_dim, self.height_dim * self.width_dim)
-        self.vision_out_2 = nn.Conv1d(in_channels=self.patch_num, out_channels=self.num_keypoints * self.depth_dim,  kernel_size=1, stride=1, padding=0)
-        nn.init.xavier_uniform_(self.vision_out_1.weight)  # N(0, 0.01)
-        nn.init.xavier_uniform_(self.vision_out_2.weight)  # N(0, 0.01)
+        # self.vision_out_1 = nn.Linear(self.latent_dim, self.height_dim * self.width_dim)
+        # self.vision_out_2 = nn.Conv1d(in_channels=self.patch_num, out_channels=self.num_keypoints * self.depth_dim,  kernel_size=1, stride=1, padding=0)
+        # nn.init.xavier_uniform_(self.vision_out_1.weight)  # N(0, 0.01)
+        # nn.init.xavier_uniform_(self.vision_out_2.weight)  # N(0, 0.01)
         self.integral_layer = HeatmapIntegralPose(backbone=self.backbone_name, num_joints=self.num_keypoints, depth_dim=self.depth_dim,
                                                 height_dim=self.height_dim, width_dim=self.width_dim, norm_type=self.norm_type,
                                                 image_size=self.image_size, bbox_3d_shape=self.bbox_3d_shape, rootid=self.reference_keypoint_id,
@@ -97,6 +107,7 @@ class FullTransformerNetwork(nn.Module):
         self.pose_embed = EmbedMLP(in_dim=1, hidden_dim=args.hidden_dim, out_dim=self.latent_dim, num_blocks=args.num_in_blocks)
         self.rotation_embed = EmbedMLP(in_dim=self.rotation_dim, hidden_dim=args.hidden_dim, out_dim=self.latent_dim, num_blocks=args.num_in_blocks)
         self.root_depth_embed = EmbedMLP(in_dim=1, hidden_dim=args.hidden_dim, out_dim=self.latent_dim, num_blocks=args.num_in_blocks)
+        # self.root_depth_embed = EmbedMLP(in_dim=1024, hidden_dim=args.hidden_dim, out_dim=self.latent_dim, num_blocks=args.num_in_blocks)
         #& [B, 7, 3] -> [B, 7, latent_dim]                        ->   [B, 7, 3]
         #& [B, 8] -> [B, 8, 1] -> [B, 8, latent_dim]              ->   [B, 8, 1]  -> squeeze [B, 8]
         #& [B, rot_dim] -> [B, 1, rot_dim] ->[B, 1, latent_dim]   ->   [B, rot_dim]
@@ -129,6 +140,17 @@ class FullTransformerNetwork(nn.Module):
                 ('vision', self.patch_num),
             ])
         )
+        # self.x_pos_embed = nn.Parameter(
+            # torch.zeros(1, 1 + 1 + self.num_joints + self.patch_num, self.latent_dim))
+        # x_pos_embed = get_multimodal_cond_pos_embed(
+        #     embed_dim=self.latent_dim,
+        #     mm_cond_lens=OrderedDict([
+        #         ('depth', 1),
+        #         ('rotation', 1),
+        #         ('joints', self.num_joints),
+        #         ('vision', self.patch_num),
+        #     ])
+        # )
         self.x_pos_embed.data.copy_(torch.from_numpy(x_pos_embed).float().unsqueeze(0))
         self.transformer_part = MaskedSequential(
                 *[TransformerBlock(embed_dim=self.latent_dim, 
@@ -161,7 +183,7 @@ class FullTransformerNetwork(nn.Module):
         
         #~ 暂时把 depth 换成 gt 的，看看是不是 depth 的误差带动了 vision integral 的误差
         gt_keypoints3d = kwargs.get("gt_3dkp", None)
-        gt_rot = kwargs.get("gt_rot", None)
+        # gt_rot = kwargs.get("gt_rot", None)
         gt_root_trans = gt_keypoints3d[:,self.reference_keypoint_id,:]
         gt_root_depth = gt_root_trans[:,2].unsqueeze(-1)
         # rotation_input = kwargs.get("rotation_input", None)
@@ -178,6 +200,13 @@ class FullTransformerNetwork(nn.Module):
         #* Vision forward
         if test_fps:
             t_start_vision = time.time()
+        depth_map = self.depth_backbone(x_root_input)
+        depth_feat = self.depth_head(depth_map.unsqueeze(1))
+        pred_depth = self.depth_linear(depth_feat.view(-1, 1024))
+        if self.multi_kp:
+            pred_depth = self.depth_linear(depth_feat.view(-1, 1))[:, self.reference_keypoint_id]
+
+
         vision_feat = self.vision_backbone.forward_features(x_reg_input)["x_norm_patchtokens"]  #& [B, 324, 384]
         vision_output = self.vision_channel(vision_feat)                                        #& [B, 324, 512]
         
@@ -226,7 +255,7 @@ class FullTransformerNetwork(nn.Module):
         pred_rot = self.rotation_outhead(pred_rot_feat)
         # pred_rot = torch.randn((batch_size, self.rotation_dim)).cuda()
         # pred_rot = gt_rot
-        pred_depth = gt_root_depth
+        # pred_depth = gt_root_depth
         # pred_depth_feat = pred_vis_point_pose_rot_depth_embed_output[:, -1, :]
         # pred_depth = self.root_depth_outhead(pred_depth_feat)
 

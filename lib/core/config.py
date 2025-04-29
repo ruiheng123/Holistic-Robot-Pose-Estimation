@@ -62,6 +62,8 @@ def make_default_cfg():
     # model
     ## basic setting
     cfg.vision_encoder_name = "vits"
+    cfg.depth_encoder_name = "vits"
+    cfg.depth_encoder_path = None
     cfg.depth_dim = 63
     cfg.backbone_name = "resnet50"
     cfg.rootnet_backbone_name = "hrnet32"

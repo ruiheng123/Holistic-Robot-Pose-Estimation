@@ -6,5 +6,6 @@ __pycache__
 /experiments
 /models
 /unit_test
-
+/DepthAnythingV2
+/image*
 run.sh
