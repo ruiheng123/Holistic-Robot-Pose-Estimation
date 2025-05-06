@@ -80,11 +80,11 @@ class FullTransformerNetwork(nn.Module):
         self.depth_backbone = load_dam_model(self.depth_encoder_name, self.depth_encoder_path)
         for param in self.vision_backbone.parameters():
             param.requires_grad = False
-        for param in self.depth_backbone.parameters():
+        for param in self.depth_backbone.pretrained.parameters():
             param.requires_grad = False
         self.multi_kp = args.multi_kp
         self.depth_head = DepthHead()
-        self.depth_linear = nn.Linear(1024, self.num_keypoints if self.multi_kp else 1)
+        self.depth_linear = nn.Linear(2048, self.num_keypoints if self.multi_kp else 1)
         self.vision_patch_size = self.vision_backbone.patch_size #! 14 in dino
         self.patch_num = (int(self.image_size) // self.vision_patch_size) ** 2
         #& need image_size to be divisible by vision_patch_size!
@@ -201,10 +201,19 @@ class FullTransformerNetwork(nn.Module):
         if test_fps:
             t_start_vision = time.time()
         depth_map = self.depth_backbone(x_root_input)
-        depth_feat = self.depth_head(depth_map.unsqueeze(1))
-        pred_depth = self.depth_linear(depth_feat.view(-1, 1024))
-        if self.multi_kp:
-            pred_depth = self.depth_linear(depth_feat.view(-1, 1))[:, self.reference_keypoint_id]
+        min_vals = depth_map.view(batch_size, -1).min(dim=1, keepdim=True)[0].unsqueeze(-1)  # shape [B, 1, 1]
+        max_vals = depth_map.view(batch_size, -1).max(dim=1, keepdim=True)[0].unsqueeze(-1)  # shape [B, 1, 1]
+
+# 归一化 (x - min) / (max - min)
+        normalized_depth = (depth_map - min_vals) / (max_vals - min_vals + 1e-8)
+        # depth_img = torch.cat([x_root_input, depth_map.unsqueeze(1)], dim=1)
+        depth_feat = self.depth_head(normalized_depth)
+        pred_depth = self.depth_linear(depth_feat.view(-1, 2048))
+
+        # pred_depth = pred_gamma * k_value.view(-1,1)
+        # pred_depth = pred_depth.reshape(batch_size, 1) / 1000.0
+        # if self.multi_kp:
+            # pred_depth = self.depth_linear(depth_feat.view(-1, 2048))[:, self.reference_keypoint_id]
 
 
         vision_feat = self.vision_backbone.forward_features(x_reg_input)["x_norm_patchtokens"]  #& [B, 324, 384]

@@ -5,7 +5,7 @@ device_id : [0]
 
 # experiment name (also name of the saving directory)
 # model and log directory : {ROOT}/experiment/{exp_name}/
-exp_name : "panda_full_1try" 
+exp_name : "panda_full_nodepthgt_freezedepdi_normdpmap" 
 
 # Data
 urdf_robot_name : "panda"
